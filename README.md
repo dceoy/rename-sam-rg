@@ -3,6 +3,8 @@ replace-sam-read-group
 
 Tiny Command to Replace Read-Group Attributes of a SAM file
 
+[![CI to Docker Hub](https://github.com/dceoy/replace-sam-read-group/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/dceoy/replace-sam-read-group/actions/workflows/docker-publish.yml)
+
 Installation
 ------------
 

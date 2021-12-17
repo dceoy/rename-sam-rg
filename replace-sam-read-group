@@ -30,7 +30,7 @@ fi
 
 COMMAND_PATH=$(realpath "${0}")
 COMMAND_NAME=$(basename "${COMMAND_PATH}")
-COMMAND_VERSION='v0.0.1'
+COMMAND_VERSION='v0.1.0'
 
 RG_KEYS=('ID' 'BC' 'CN' 'DS' 'DT' 'FO' 'KS' 'LB' 'PG' 'PI' 'PL' 'PM' 'PU' 'SM')
 UPDATED_RG_KEYS=()

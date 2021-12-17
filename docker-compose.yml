@@ -1,0 +1,17 @@
+---
+version: '3'
+
+services:
+  replace-sam-read-group:
+    container_name: replace-sam-read-group
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dceoy/replace-sam-read-group:latest
+    user: ${UID}:${GID}
+    userns_mode: host
+    volumes:
+      - .:/wd
+    working_dir: /wd
+    entrypoint:
+      - /usr/local/bin/replace-sam-read-group
