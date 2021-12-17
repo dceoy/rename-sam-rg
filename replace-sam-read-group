@@ -3,13 +3,15 @@
 # Tiny Command to Replace Read-Group Tags of a SAM file
 #
 # Usage:
-#   replace-sam-read-group [--debug] [--lb=<str>] [--pl=<str>] [--pu=<str>]
-#     [--sm=<str>] <input_sam> <output>
+#   replace-sam-read-group [--debug] [--cpus=<int>] [--sam-index] [--lb=<str>]
+#     [--pl=<str>] [--pu=<str>] [--sm=<str>] <input_sam> <output>
 #   replace-sam-read-group --version
 #   replace-sam-read-group -h|--help
 #
 # Options:
 #   --debug           Debug mode
+#   --cpus=<int>      Limit CPUs for multiprocessing
+#   --sam-index       Create a BAM or CRAM index file
 #   --lb=<str>        Replace a read-group library (LB)
 #   --pl=<str>        Replace a read-group platform (PL)
 #   --pu=<str>        Replace a read-group platform unit (PU)
@@ -30,11 +32,24 @@ fi
 
 COMMAND_PATH=$(realpath "${0}")
 COMMAND_NAME=$(basename "${COMMAND_PATH}")
-COMMAND_VERSION='v0.1.0'
-
+COMMAND_VERSION='v0.1.1'
 RG_KEYS=('ID' 'BC' 'CN' 'DS' 'DT' 'FO' 'KS' 'LB' 'PG' 'PI' 'PL' 'PM' 'PU' 'SM')
+
+case "${OSTYPE}" in
+  darwin* )
+    CPUS=$(sysctl -n hw.ncpu)
+    ;;
+  linux* )
+    CPUS=$(grep -ce '^processor\s\+:' /proc/cpuinfo)
+    ;;
+  * )
+    CPUS=1
+    :
+    ;;
+esac
 UPDATED_RG_KEYS=()
 MAIN_ARGS=()
+CREATE_SAM_INDEX=0
 
 function print_version {
   echo "${COMMAND_NAME}: ${COMMAND_VERSION}"
@@ -60,6 +75,15 @@ while [[ ${#} -ge 1 ]]; do
   case "${1}" in
     '--debug' )
       shift 1
+      ;;
+    '--cpus' )
+      CPUS="${2}" && shift 2
+      ;;
+    --cpus=* )
+      CPUS="${1#*\=}" && shift 1
+      ;;
+    '--sam-index' )
+      CREATE_SAM_INDEX=1 && shift 1
       ;;
     '--version' )
       print_version && exit 0
@@ -112,4 +136,8 @@ if [[ "${DST_SAM:0:5}" = 's3://' ]]; then
 else
   samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
     > "${DST_SAM}"
+fi
+
+if [[ ${CREATE_SAM_INDEX} -ne 0 ]]; then
+  samtools index --threads "${CPUS}" "${DST_SAM}"
 fi
