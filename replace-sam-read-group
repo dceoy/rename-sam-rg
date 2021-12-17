@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
 #
-# Tiny Command to Replace Read-Group Tags of a SAM file
+# Command to atomically replace Read-Group tags in a BAM or CRAM file
 #
 # Usage:
 #   replace-sam-read-group [--debug] [--cpus=<int>] [--index-sam] [--lb=<str>]
-#     [--pl=<str>] [--pu=<str>] [--sm=<str>] <input_sam> <output>
+#     [--pl=<str>] [--pu=<str>] [--sm=<str>] <input_sam> <output_sam>
 #   replace-sam-read-group --version
 #   replace-sam-read-group -h|--help
 #
 # Options:
-#   --debug           Debug mode
+#   --debug           Enable debug mode
 #   --cpus=<int>      Limit CPUs for multiprocessing
 #   --index-sam       Create a BAM or CRAM index file
 #   --lb=<str>        Replace a read-group library (LB)
 #   --pl=<str>        Replace a read-group platform (PL)
 #   --pu=<str>        Replace a read-group platform unit (PU)
 #   --sm=<str>        Replace a read-group sample name (SM)
-#   --version         Print version
-#   -h, --help        Print usage
+#   --version         Print version information and exit
+#   -h, --help        Print this help text and exit
 #
 # Arguments:
-#   <arg>             Main arguments
+#   <input_sam>       Path to an input BAM or CRAM file
+#   <output_sam>      Path to an output BAM or CRAM file
 
 set -euo pipefail
 
@@ -73,22 +74,22 @@ function abort {
 
 while [[ ${#} -ge 1 ]]; do
   case "${1}" in
-    '--debug' )
+    --debug )
       shift 1
       ;;
-    '--cpus' )
+    --cpus )
       CPUS="${2}" && shift 2
       ;;
     --cpus=* )
       CPUS="${1#*\=}" && shift 1
       ;;
-    '--index-sam' )
+    --index-sam )
       INDEX_SAM=1 && shift 1
       ;;
-    '--version' )
+    --version )
       print_version && exit 0
       ;;
-    '-h' | '--help' )
+    -h | --help )
       print_usage && exit 0
       ;;
     --*=* )
