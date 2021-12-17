@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tiny Command to Replace Read-Group Attributes of a SAM file
+# Tiny Command to Replace Read-Group Tags of a SAM file
 #
 # Usage:
 #   replace-sam-read-group [--debug] [--lb=<str>] [--pl=<str>] [--pu=<str>]
@@ -107,8 +107,9 @@ done
 SRC_SAM="${MAIN_ARGS[0]}"
 DST_SAM="${MAIN_ARGS[1]}"
 if [[ "${DST_SAM:0:5}" = 's3://' ]]; then
-  aws s3 cp "${SRC_SAM}" "${DST_SAM}"
-  samtools reheader --command "sed -e \"${REHEADER_SED}\"" --in-place "${DST_SAM}"
+  samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
+    | aws s3 cp - "${DST_SAM}"
 else
-  samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" > "${DST_SAM}"
+  samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
+    > "${DST_SAM}"
 fi
