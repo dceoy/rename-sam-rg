@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+#
+# Tiny Command to Replace Read-Group Attributes of a SAM file
+#
+# Usage:
+#   replace-sam-read-group [--debug] [--lb=<str>] [--pl=<str>] [--pu=<str>]
+#     [--sm=<str>] <input_sam> <output>
+#   replace-sam-read-group --version
+#   replace-sam-read-group -h|--help
+#
+# Options:
+#   --debug           Debug mode
+#   --lb=<str>        Replace a read-group library (LB in @RG)
+#   --pl=<str>        Replace a read-group platform (PL in @RG)
+#   --pu=<str>        Replace a read-group platform unit (PU in @RG)
+#   --sm=<str>        Replace a read-group sample name (SM in @RG)
+#   --version         Print version
+#   -h, --help        Print usage
+#
+# Arguments:
+#   <arg>             Main arguments
+
+set -euo pipefail
+
+if [[ ${#} -ge 1 ]]; then
+  for a in "${@}"; do
+    [[ "${a}" = '--debug' ]] && set -x && break
+  done
+fi
+
+COMMAND_PATH=$(realpath "${0}")
+COMMAND_NAME=$(basename "${COMMAND_PATH}")
+COMMAND_VERSION='v0.0.1'
+
+MAIN_ARGS=()
+NEW_LB=''
+NEW_PL=''
+NEW_PU=''
+NEW_SM=''
+
+function print_version {
+  echo "${COMMAND_NAME}: ${COMMAND_VERSION}"
+}
+
+function print_usage {
+  sed -ne '1,2d; /^#/!q; s/^#$/# /; s/^# //p;' "${COMMAND_PATH}"
+}
+
+function abort {
+  {
+    if [[ ${#} -eq 0 ]]; then
+      cat -
+    else
+      COMMAND_NAME=$(basename "${COMMAND_PATH}")
+      echo "${COMMAND_NAME}: ${*}"
+    fi
+  } >&2
+  exit 1
+}
+
+while [[ ${#} -ge 1 ]]; do
+  case "${1}" in
+    '--debug' )
+      shift 1
+      ;;
+    '--lb' )
+      NEW_LB="${2}" && shift 2
+      ;;
+    --lb=* )
+      NEW_LB="${1#*\=}" && shift 1
+      ;;
+    '--pl' )
+      NEW_PL="${2}" && shift 2
+      ;;
+    --pl=* )
+      NEW_PL="${1#*\=}" && shift 1
+      ;;
+    '--pu' )
+      NEW_PU="${2}" && shift 2
+      ;;
+    --pu=* )
+      NEW_PU="${1#*\=}" && shift 1
+      ;;
+    '--sm' )
+      NEW_SM="${2}" && shift 2
+      ;;
+    --sm=* )
+      NEW_SM="${1#*\=}" && shift 1
+      ;;
+    '--version' )
+      print_version && exit 0
+      ;;
+    '-h' | '--help' )
+      print_usage && exit 0
+      ;;
+    -* )
+      abort "invalid option: ${1}"
+      ;;
+    * )
+      MAIN_ARGS+=("${1}") && shift 1
+      ;;
+  esac
+done
+
+[[ -n "${NEW_LB}${NEW_PL}${NEW_PU}${NEW_SM}" ]] \
+  || abort 'required option: --lb, --pl, --pu, or --sm'
+[[ ${#MAIN_ARGS[@]} -eq 2 ]] \
+  || abort "invalid arguments: ${MAIN_ARGS[*]}"
+
+
+src_sam="${MAIN_ARGS[1]}"
+dst_sam="${MAIN_ARGS[2]}"
+
+rg=$(samtools view -H "${src_sam}" | perl -wnle '/^\@RG\t/ and print;')
+n_rg=$(echo -ne "${rg}" | wc -l)
+if [[ ${n_rg} -eq 0 ]]; then
+  abort "read-group not found: ${src_sam}"
+elif [[ ${n_rg} -gt 1 ]]; then
+  abort "multiple read groups found: ${src_sam}"
+fi
+
+declare -A new_rg_aa=(
+['LB']="${NEW_LB}"
+['PL']="${NEW_PL}"
+['PU']="${NEW_PU}"
+['SM']="${NEW_SM}"
+)
+for k in "${!new_rg_aa[@]}"; do
+  v="${new_rg_aa[${k}]}"
+  if [[ -n "${v}" ]]; then
+    rg=$(echo -ne "${rg}" | perl -wpe "s/\\t${k}:[^\\t]+/\\t${k}:${v}/")
+  fi
+done
+
+cmd="perl -wpe 's/^\\@RG\\t.*$/${rg}/'"
+if [[ "${dst_sam:0:5}" = 's3://' ]]; then
+  aws s3 cp "${src_sam}" "${dst_sam}"
+  samtools reheader --comand "${cmd}" --in-place "${dst_sam}"
+else
+  samtools reheader --comand "${cmd}" "${src_sam}" > "${dst_sam}"
+fi
