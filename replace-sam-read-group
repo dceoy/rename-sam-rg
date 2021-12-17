@@ -10,10 +10,10 @@
 #
 # Options:
 #   --debug           Debug mode
-#   --lb=<str>        Replace a read-group library (LB in @RG)
-#   --pl=<str>        Replace a read-group platform (PL in @RG)
-#   --pu=<str>        Replace a read-group platform unit (PU in @RG)
-#   --sm=<str>        Replace a read-group sample name (SM in @RG)
+#   --lb=<str>        Replace a read-group library (LB)
+#   --pl=<str>        Replace a read-group platform (PL)
+#   --pu=<str>        Replace a read-group platform unit (PU)
+#   --sm=<str>        Replace a read-group sample name (SM)
 #   --version         Print version
 #   -h, --help        Print usage
 #
@@ -32,11 +32,9 @@ COMMAND_PATH=$(realpath "${0}")
 COMMAND_NAME=$(basename "${COMMAND_PATH}")
 COMMAND_VERSION='v0.0.1'
 
+RG_KEYS=('ID' 'BC' 'CN' 'DS' 'DT' 'FO' 'KS' 'LB' 'PG' 'PI' 'PL' 'PM' 'PU' 'SM')
+UPDATED_RG_KEYS=()
 MAIN_ARGS=()
-NEW_LB=''
-NEW_PL=''
-NEW_PU=''
-NEW_SM=''
 
 function print_version {
   echo "${COMMAND_NAME}: ${COMMAND_VERSION}"
@@ -63,38 +61,29 @@ while [[ ${#} -ge 1 ]]; do
     '--debug' )
       shift 1
       ;;
-    '--lb' )
-      NEW_LB="${2}" && shift 2
-      ;;
-    --lb=* )
-      NEW_LB="${1#*\=}" && shift 1
-      ;;
-    '--pl' )
-      NEW_PL="${2}" && shift 2
-      ;;
-    --pl=* )
-      NEW_PL="${1#*\=}" && shift 1
-      ;;
-    '--pu' )
-      NEW_PU="${2}" && shift 2
-      ;;
-    --pu=* )
-      NEW_PU="${1#*\=}" && shift 1
-      ;;
-    '--sm' )
-      NEW_SM="${2}" && shift 2
-      ;;
-    --sm=* )
-      NEW_SM="${1#*\=}" && shift 1
-      ;;
     '--version' )
       print_version && exit 0
       ;;
     '-h' | '--help' )
       print_usage && exit 0
       ;;
-    -* )
-      abort "invalid option: ${1}"
+    --*=* )
+      k=$(echo -e "${1%%\=*}" | sed -e 's/^-\+//; s/^.*$/\U\0/;')
+      if [[ ${#k} -eq 2 ]] && [[ ${RG_KEYS[*]} =~ ${k} ]]; then
+        UPDATED_RG_KEYS+=("${k}")
+        eval "NEW_${k}='${1#*\=}'" && shift 1
+      else
+        abort "invalid option: ${1}"
+      fi
+      ;;
+    --* )
+      k=$(echo -e "${1}" | sed -e 's/^-\+//; s/^.*$/\U\0/;')
+      if [[ ${#k} -eq 2 ]] && [[ ${RG_KEYS[*]} =~ ${k} ]]; then
+        UPDATED_RG_KEYS+=("${k}")
+        eval "NEW_${k}='${2}'" && shift 2
+      else
+        abort "invalid option: ${1}"
+      fi
       ;;
     * )
       MAIN_ARGS+=("${1}") && shift 1
@@ -102,40 +91,24 @@ while [[ ${#} -ge 1 ]]; do
   esac
 done
 
-[[ -n "${NEW_LB}${NEW_PL}${NEW_PU}${NEW_SM}" ]] \
-  || abort 'required option: --lb, --pl, --pu, or --sm'
+[[ ${#UPDATED_RG_KEYS[@]} -gt 0 ]] \
+  || abort 'replacement option not found.'
 [[ ${#MAIN_ARGS[@]} -eq 2 ]] \
   || abort "invalid arguments: ${MAIN_ARGS[*]}"
 
-
-src_sam="${MAIN_ARGS[1]}"
-dst_sam="${MAIN_ARGS[2]}"
-
-rg=$(samtools view -H "${src_sam}" | perl -wnle '/^\@RG\t/ and print;')
-n_rg=$(echo -ne "${rg}" | wc -l)
-if [[ ${n_rg} -eq 0 ]]; then
-  abort "read-group not found: ${src_sam}"
-elif [[ ${n_rg} -gt 1 ]]; then
-  abort "multiple read groups found: ${src_sam}"
-fi
-
-declare -A new_rg_aa=(
-['LB']="${NEW_LB}"
-['PL']="${NEW_PL}"
-['PU']="${NEW_PU}"
-['SM']="${NEW_SM}"
-)
-for k in "${!new_rg_aa[@]}"; do
-  v="${new_rg_aa[${k}]}"
+REHEADER_SED=''
+for k in "${UPDATED_RG_KEYS[@]}"; do
+  v=$(eval "echo -e \"\${NEW_${k}}\"")
   if [[ -n "${v}" ]]; then
-    rg=$(echo -ne "${rg}" | perl -wpe "s/\\t${k}:[^\\t]+/\\t${k}:${v}/")
+    REHEADER_SED+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
   fi
 done
 
-cmd="perl -wpe 's/^\\@RG\\t.*$/${rg}/'"
-if [[ "${dst_sam:0:5}" = 's3://' ]]; then
-  aws s3 cp "${src_sam}" "${dst_sam}"
-  samtools reheader --comand "${cmd}" --in-place "${dst_sam}"
+SRC_SAM="${MAIN_ARGS[0]}"
+DST_SAM="${MAIN_ARGS[1]}"
+if [[ "${DST_SAM:0:5}" = 's3://' ]]; then
+  aws s3 cp "${SRC_SAM}" "${DST_SAM}"
+  samtools reheader --command "sed -e \"${REHEADER_SED}\"" --in-place "${DST_SAM}"
 else
-  samtools reheader --comand "${cmd}" "${src_sam}" > "${dst_sam}"
+  samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" > "${DST_SAM}"
 fi
