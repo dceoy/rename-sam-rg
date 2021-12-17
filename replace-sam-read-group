@@ -3,7 +3,7 @@
 # Tiny Command to Replace Read-Group Tags of a SAM file
 #
 # Usage:
-#   replace-sam-read-group [--debug] [--cpus=<int>] [--sam-index] [--lb=<str>]
+#   replace-sam-read-group [--debug] [--cpus=<int>] [--index-sam] [--lb=<str>]
 #     [--pl=<str>] [--pu=<str>] [--sm=<str>] <input_sam> <output>
 #   replace-sam-read-group --version
 #   replace-sam-read-group -h|--help
@@ -11,7 +11,7 @@
 # Options:
 #   --debug           Debug mode
 #   --cpus=<int>      Limit CPUs for multiprocessing
-#   --sam-index       Create a BAM or CRAM index file
+#   --index-sam       Create a BAM or CRAM index file
 #   --lb=<str>        Replace a read-group library (LB)
 #   --pl=<str>        Replace a read-group platform (PL)
 #   --pu=<str>        Replace a read-group platform unit (PU)
@@ -49,7 +49,7 @@ case "${OSTYPE}" in
 esac
 UPDATED_RG_KEYS=()
 MAIN_ARGS=()
-CREATE_SAM_INDEX=0
+INDEX_SAM=0
 
 function print_version {
   echo "${COMMAND_NAME}: ${COMMAND_VERSION}"
@@ -82,8 +82,8 @@ while [[ ${#} -ge 1 ]]; do
     --cpus=* )
       CPUS="${1#*\=}" && shift 1
       ;;
-    '--sam-index' )
-      CREATE_SAM_INDEX=1 && shift 1
+    '--index-sam' )
+      INDEX_SAM=1 && shift 1
       ;;
     '--version' )
       print_version && exit 0
@@ -109,35 +109,44 @@ while [[ ${#} -ge 1 ]]; do
         abort "invalid option: ${1}"
       fi
       ;;
+    - )
+      MAIN_ARGS+=("${1}") && shift 1
+      ;;
+    -* )
+      abort "invalid option: ${1}"
+      ;;
     * )
       MAIN_ARGS+=("${1}") && shift 1
       ;;
   esac
 done
 
-[[ ${#UPDATED_RG_KEYS[@]} -gt 0 ]] \
-  || abort 'replacement option not found.'
-[[ ${#MAIN_ARGS[@]} -eq 2 ]] \
-  || abort "invalid arguments: ${MAIN_ARGS[*]}"
+[[ ${#UPDATED_RG_KEYS[@]} -eq 0 ]] \
+  && abort 'missing replacement options'
+[[ ${#MAIN_ARGS[@]} -lt 2 ]] \
+  && abort 'missing arguments'
+[[ ${#MAIN_ARGS[@]} -gt 2 ]] \
+  && abort 'too many arguments'
 
 REHEADER_SED=''
 for k in "${UPDATED_RG_KEYS[@]}"; do
   v=$(eval "echo -e \"\${NEW_${k}}\"")
-  if [[ -n "${v}" ]]; then
-    REHEADER_SED+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
-  fi
+  [[ -z "${v}" ]] \
+    || REHEADER_SED+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
 done
 
 SRC_SAM="${MAIN_ARGS[0]}"
 DST_SAM="${MAIN_ARGS[1]}"
-if [[ "${DST_SAM:0:5}" = 's3://' ]]; then
-  samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
-    | aws s3 cp - "${DST_SAM}"
+if [[ "${DST_SAM}" = '-' ]]; then
+  samtools reheader -c "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}"
 else
-  samtools reheader --command "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
-    > "${DST_SAM}"
-fi
-
-if [[ ${CREATE_SAM_INDEX} -ne 0 ]]; then
-  samtools index --threads "${CPUS}" "${DST_SAM}"
+  if [[ "${DST_SAM:0:5}" = 's3://' ]]; then
+    samtools reheader -c "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
+      | aws s3 cp - "${DST_SAM}"
+  else
+    samtools reheader -c "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
+      > "${DST_SAM}"
+  fi
+  [[ ${INDEX_SAM} -eq 0 ]] \
+    || samtools index -@ "${CPUS}" "${DST_SAM}"
 fi

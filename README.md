@@ -20,22 +20,22 @@ Installation
 Usage
 -----
 
-Create a SAM file with a new read-group sample name (SM).
+- Create a SAM file with a new read-group sample name (SM).
 
-```sh
-$ replace-sam-read-group \
-    --sm='new-sample-name' \
-    ./input.bam \
-    ./output.bam
-```
+  ```sh
+  $ replace-sam-read-group \
+      --sm='new-sample-name' \
+      ./input.bam \
+      ./output.bam
+  ```
 
-Create a SAM file with a new SM in AWS (This requires AWS CLI.)
+- Create a SAM file with a new SM in AWS. (Uploading to S3 requires AWS CLI.)
 
-```sh
-$ replace-sam-read-group \
-    --sm='new-sample-name' \
-    s3://sample-bam-bucket/input.bam \
-    s3://sample-bam-bucket/output.bam
-```
+  ```sh
+  $ replace-sam-read-group \
+      --sm='new-sample-name' \
+      s3://sample-bam-bucket/input.bam \
+      s3://sample-bam-bucket/output.bam
+  ```
 
 Run `replace-sam-read-group --help` for more information.
