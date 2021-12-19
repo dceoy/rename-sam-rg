@@ -139,7 +139,7 @@ INPUT_SAM="${MAIN_ARGS[0]}"
 
 reheader_sed=''
 for k in "${UPDATED_RG_KEYS[@]}"; do
-  v=$(eval "echo -e \"\${NEW_${k}}\"")
+  v=$(eval "set -eu && echo -e \"\${NEW_${k}}\"")
   [[ -z "${v}" ]] \
     || reheader_sed+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
 done
@@ -150,17 +150,17 @@ else
   if [[ "${OUTPUT_SAM:0:5}" = 's3://' ]]; then
     if [[ "${INPUT_SAM}" = "${OUTPUT_SAM}" ]]; then
       samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
-        | aws s3 cp - "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}"
-      aws s3 cp "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
-      aws s3 rm "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}"
+        | aws s3 cp - "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
+      aws s3 cp "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
+      aws s3 rm "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
     else
       samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
         | aws s3 cp - "${OUTPUT_SAM}"
     fi
   elif [[ "${INPUT_SAM}" = "${OUTPUT_SAM}" ]]; then
     samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
-      > "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}"
-    mv "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
+      > "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
+    mv "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
   else
     samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
       > "${OUTPUT_SAM}"
