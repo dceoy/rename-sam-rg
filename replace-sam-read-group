@@ -4,24 +4,24 @@
 #
 # Usage:
 #   replace-sam-read-group [--debug] [--cpus=<int>] [--index-sam] [--lb=<str>]
-#     [--pl=<str>] [--pu=<str>] [--sm=<str>] <input_sam> <output_sam>
+#     [--pl=<str>] [--pu=<str>] [--sm=<str>] [--output-sam=<path>] <input_sam>
 #   replace-sam-read-group --version
 #   replace-sam-read-group -h|--help
 #
 # Options:
-#   --debug           Enable debug mode
-#   --cpus=<int>      Limit CPUs for multiprocessing
-#   --index-sam       Create a BAM or CRAM index file
-#   --lb=<str>        Replace a read-group library (LB)
-#   --pl=<str>        Replace a read-group platform (PL)
-#   --pu=<str>        Replace a read-group platform unit (PU)
-#   --sm=<str>        Replace a read-group sample name (SM)
-#   --version         Print version information and exit
-#   -h, --help        Print this help text and exit
+#   --debug               Enable debug mode
+#   --cpus=<int>          Limit CPUs for multiprocessing
+#   --index-sam           Create a BAM or CRAM index file
+#   --lb=<str>            Replace a read-group library (LB)
+#   --pl=<str>            Replace a read-group platform (PL)
+#   --pu=<str>            Replace a read-group platform unit (PU)
+#   --sm=<str>            Replace a read-group sample name (SM)
+#   --output-sam=<path>   Specify a ath to an output BAM or CRAM file
+#   --version             Print version information and exit
+#   -h, --help            Print this help text and exit
 #
 # Arguments:
-#   <input_sam>       Path to an input BAM or CRAM file
-#   <output_sam>      Path to an output BAM or CRAM file
+#   <input_sam>           Path to an input BAM or CRAM file
 
 set -euo pipefail
 
@@ -33,24 +33,8 @@ fi
 
 COMMAND_PATH=$(realpath "${0}")
 COMMAND_NAME=$(basename "${COMMAND_PATH}")
-COMMAND_VERSION='v0.1.1'
+COMMAND_VERSION='v0.2.0'
 RG_KEYS=('ID' 'BC' 'CN' 'DS' 'DT' 'FO' 'KS' 'LB' 'PG' 'PI' 'PL' 'PM' 'PU' 'SM')
-
-case "${OSTYPE}" in
-  darwin* )
-    CPUS=$(sysctl -n hw.ncpu)
-    ;;
-  linux* )
-    CPUS=$(grep -ce '^processor\s\+:' /proc/cpuinfo)
-    ;;
-  * )
-    CPUS=1
-    :
-    ;;
-esac
-UPDATED_RG_KEYS=()
-MAIN_ARGS=()
-INDEX_SAM=0
 
 function print_version {
   echo "${COMMAND_NAME}: ${COMMAND_VERSION}"
@@ -72,6 +56,23 @@ function abort {
   exit 1
 }
 
+case "${OSTYPE}" in
+  darwin* )
+    CPUS=$(sysctl -n hw.ncpu)
+    ;;
+  linux* )
+    CPUS=$(grep -ce '^processor\s\+:' /proc/cpuinfo)
+    ;;
+  * )
+    CPUS=1
+    :
+    ;;
+esac
+UPDATED_RG_KEYS=()
+MAIN_ARGS=()
+INDEX_SAM=0
+OUTPUT_SAM=''
+
 while [[ ${#} -ge 1 ]]; do
   case "${1}" in
     --debug )
@@ -91,6 +92,12 @@ while [[ ${#} -ge 1 ]]; do
       ;;
     -h | --help )
       print_usage && exit 0
+      ;;
+    --output-sam )
+      OUTPUT_SAM="${2}" && shift 2
+      ;;
+    --output-sam=* )
+      OUTPUT_SAM="${1#*\=}" && shift 1
       ;;
     --*=* )
       k=$(echo -e "${1%%\=*}" | sed -e 's/^-\+//; s/^.*$/\U\0/;')
@@ -124,30 +131,40 @@ done
 
 [[ ${#UPDATED_RG_KEYS[@]} -eq 0 ]] \
   && abort 'missing replacement options'
-[[ ${#MAIN_ARGS[@]} -lt 2 ]] \
+[[ ${#MAIN_ARGS[@]} -lt 1 ]] \
   && abort 'missing arguments'
-[[ ${#MAIN_ARGS[@]} -gt 2 ]] \
+[[ ${#MAIN_ARGS[@]} -gt 1 ]] \
   && abort 'too many arguments'
+INPUT_SAM="${MAIN_ARGS[0]}"
 
-REHEADER_SED=''
+reheader_sed=''
 for k in "${UPDATED_RG_KEYS[@]}"; do
   v=$(eval "echo -e \"\${NEW_${k}}\"")
   [[ -z "${v}" ]] \
-    || REHEADER_SED+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
+    || reheader_sed+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
 done
 
-SRC_SAM="${MAIN_ARGS[0]}"
-DST_SAM="${MAIN_ARGS[1]}"
-if [[ "${DST_SAM}" = '-' ]]; then
-  samtools reheader -c "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}"
+if [[ -z "${OUTPUT_SAM}" ]]; then
+  samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}"
 else
-  if [[ "${DST_SAM:0:5}" = 's3://' ]]; then
-    samtools reheader -c "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
-      | aws s3 cp - "${DST_SAM}"
+  if [[ "${OUTPUT_SAM:0:5}" = 's3://' ]]; then
+    if [[ "${INPUT_SAM}" = "${OUTPUT_SAM}" ]]; then
+      samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
+        | aws s3 cp - "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}"
+      aws s3 cp "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
+      aws s3 rm "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}"
+    else
+      samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
+        | aws s3 cp - "${OUTPUT_SAM}"
+    fi
+  elif [[ "${INPUT_SAM}" = "${OUTPUT_SAM}" ]]; then
+    samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
+      > "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}"
+    mv "${OUTPUT_SAM}.reheadered.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
   else
-    samtools reheader -c "sed -e \"${REHEADER_SED}\"" "${SRC_SAM}" \
-      > "${DST_SAM}"
+    samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
+      > "${OUTPUT_SAM}"
   fi
   [[ ${INDEX_SAM} -eq 0 ]] \
-    || samtools index -@ "${CPUS}" "${DST_SAM}"
+    || samtools index -@ "${CPUS}" "${OUTPUT_SAM}"
 fi

@@ -34,8 +34,8 @@ Usage
   ```sh
   $ replace-sam-read-group \
       --sm='new-sample-name' \
-      ./input.bam \
-      ./output.bam
+      --output-sam=./output.bam
+      ./input.bam
   ```
 
 - Create a renamed CRAM file in AWS (Uploading to S3 requires AWS CLI).
@@ -43,8 +43,8 @@ Usage
   ```sh
   $ replace-sam-read-group \
       --sm='new-sample-name' \
-      s3://sample-bam-bucket/input.cram \
-      s3://sample-bam-bucket/output.cram
+      --output-sam=s3://sample-bam-bucket/output.cram
+      s3://sample-bam-bucket/input.cram
   ```
 
 Run `replace-sam-read-group --help` for more information.
