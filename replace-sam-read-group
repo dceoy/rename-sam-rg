@@ -100,7 +100,7 @@ while [[ ${#} -ge 1 ]]; do
       OUTPUT_SAM="${1#*\=}" && shift 1
       ;;
     --*=* )
-      k=$(echo -e "${1%%\=*}" | sed -e 's/^-\+//; s/^.*$/\U\0/;')
+      k=$(echo -e "${1%%\=*}" | perl -wpe 's/^-+//; s/^(.*)$/\U$1/;')
       if [[ ${#k} -eq 2 ]] && [[ ${RG_KEYS[*]} =~ ${k} ]]; then
         UPDATED_RG_KEYS+=("${k}")
         eval "NEW_${k}='${1#*\=}'" && shift 1
@@ -109,7 +109,7 @@ while [[ ${#} -ge 1 ]]; do
       fi
       ;;
     --* )
-      k=$(echo -e "${1}" | sed -e 's/^-\+//; s/^.*$/\U\0/;')
+      k=$(echo -e "${1}" | perl -wpe 's/^-+//; s/^(.*)$/\U$1/;')
       if [[ ${#k} -eq 2 ]] && [[ ${RG_KEYS[*]} =~ ${k} ]]; then
         UPDATED_RG_KEYS+=("${k}")
         eval "NEW_${k}='${2}'" && shift 2
