@@ -33,7 +33,7 @@ fi
 
 COMMAND_PATH=$(realpath "${0}")
 COMMAND_NAME=$(basename "${COMMAND_PATH}")
-COMMAND_VERSION='v0.2.0'
+COMMAND_VERSION='v0.2.1'
 RG_KEYS=('ID' 'BC' 'CN' 'DS' 'DT' 'FO' 'KS' 'LB' 'PG' 'PI' 'PL' 'PM' 'PU' 'SM')
 
 function print_version {
@@ -137,32 +137,33 @@ done
   && abort 'too many arguments'
 INPUT_SAM="${MAIN_ARGS[0]}"
 
-reheader_sed=''
+reheader_pl=''
 for k in "${UPDATED_RG_KEYS[@]}"; do
   v=$(eval "set -eu && echo -e \"\${NEW_${k}}\"")
   [[ -z "${v}" ]] \
-    || reheader_sed+="s/^\\(@RG\\t.*\\t${k}\\):[^\\t]\\+/\\1:${v}/;"
+    || reheader_pl+="s/^(\\@RG.*\\t${k}):[^\\t]+/\$1:${v}/;"
 done
+reheader_pl="perl -wpe '${reheader_pl}'"
 
 if [[ -z "${OUTPUT_SAM}" ]]; then
-  samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}"
+  samtools reheader -c "${reheader_pl}" "${INPUT_SAM}"
 else
   if [[ "${OUTPUT_SAM:0:5}" = 's3://' ]]; then
     if [[ "${INPUT_SAM}" = "${OUTPUT_SAM}" ]]; then
-      samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
-        | aws s3 cp - "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
-      aws s3 cp "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
-      aws s3 rm "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
+      samtools reheader -c "${reheader_pl}" "${INPUT_SAM}" \
+        | aws s3 cp - "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" \
+        && aws s3 cp "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}" \
+        && aws s3 rm "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
     else
-      samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
+      samtools reheader -c "${reheader_pl}" "${INPUT_SAM}" \
         | aws s3 cp - "${OUTPUT_SAM}"
     fi
   elif [[ "${INPUT_SAM}" = "${OUTPUT_SAM}" ]]; then
-    samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
-      > "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}"
-    mv "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
+    samtools reheader -c "${reheader_pl}" "${INPUT_SAM}" \
+      > "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" \
+      && mv "${OUTPUT_SAM}.reheader.${OUTPUT_SAM##*.}" "${OUTPUT_SAM}"
   else
-    samtools reheader -c "sed -e \"${reheader_sed}\"" "${INPUT_SAM}" \
+    samtools reheader -c "${reheader_pl}" "${INPUT_SAM}" \
       > "${OUTPUT_SAM}"
   fi
   [[ ${INDEX_SAM} -eq 0 ]] \
